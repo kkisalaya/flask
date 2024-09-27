@@ -1,31 +1,55 @@
 name: Publish
+
 on:
   push:
     branches: [ main ]
-      
-      
+
 jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
       hash: ${{ steps.hash.outputs.hash }}
-    steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
-        with:
-          python-version: '3.x'
-          cache: pip
-          cache-dependency-path: requirements*/*.txt
-      - run: pip install -r requirements/build.txt
-      # Use the commit date instead of the current date during the build.
-      - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
-      - run: python -m build
-      # Generate hashes used for provenance.
-      - name: generate hash
-        id: hash
-        run: cd dist && echo "hash=$(sha256sum * | base64 -w0)" >> $GITHUB_OUTPUT
-      - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
-        with:
-          path: ./dist
- 
+    
+    services:
+      pse:
+        image: kkisalaya/pse-proxy:dev
+        env:
+          PSE_DEBUG_FLAG: --alsologtostderr
+          POLICY_LOG: t
+          INVISIRISK_JWT_TOKEN: NO_TOKEN
+          INVISIRISK_PORTAL: https://app.dev.veribom.com/
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    container:
+      image: python:3.10-alpine
+      options: --cap-add=NET_ADMIN
+
+    steps:
+    - uses: invisirisk/pse-action@v1.0.7
+      with:
+        SCAN_ID: 'Publish-Workflow'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+    - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+      with:
+        python-version: '3.x'
+        cache: pip
+        cache-dependency-path: requirements*/*.txt
+
+    - run: pip install -r requirements/build.txt
+
+    # Use the commit date instead of the current date during the build.
+    - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
+
+    - run: python -m build
+
+    # Generate hashes used for provenance.
+    - name: generate hash
+      id: hash
+      run: cd dist && echo "hash=$(sha256sum * | base64 -w0)" >> $GITHUB_OUTPUT
+
+    - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+      with:
+        path: ./dist
