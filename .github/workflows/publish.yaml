@@ -16,15 +16,20 @@ jobs:
         env:
           PSE_DEBUG_FLAG: --alsologtostderr
           POLICY_LOG: t
-          INVISIRISK_JWT_TOKEN: NO_TOKEN
+          INVISIRISK_JWT_TOKEN: ${{ secrets.INVISIRISK_JWT_TOKEN }}
           INVISIRISK_PORTAL: https://app.dev.veribom.com/
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     container:
-      image: python:3.10-alpine
-      options: --cap-add=NET_ADMIN
+      image: ubuntu:20.04
+      options: --privileged
 
     steps:
+    - name: Install necessary packages
+      run: |
+        apt-get update
+        apt-get install -y python3 python3-pip python3-venv git iptables
+
     - uses: invisirisk/pse-action@v1.0.7
       with:
         SCAN_ID: 'Publish-Workflow'
@@ -32,21 +37,35 @@ jobs:
 
     - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
-    - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
-      with:
-        python-version: '3.x'
-        cache: pip
-        cache-dependency-path: requirements*/*.txt
+    - name: Set up Python
+      run: |
+        python3 -m venv /opt/venv
+        . /opt/venv/bin/activate
+        pip install --upgrade pip
 
-    - run: pip install -r requirements/build.txt
+    - name: Cache pip packages
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements/build.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        . /opt/venv/bin/activate
+        pip install -r requirements/build.txt
 
     # Use the commit date instead of the current date during the build.
     - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
 
-    - run: python -m build
+    - name: Build
+      run: |
+        . /opt/venv/bin/activate
+        python -m build
 
     # Generate hashes used for provenance.
-    - name: generate hash
+    - name: Generate hash
       id: hash
       run: cd dist && echo "hash=$(sha256sum * | base64 -w0)" >> $GITHUB_OUTPUT
 
